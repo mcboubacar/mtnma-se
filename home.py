@@ -252,26 +252,3 @@ if not retard.empty:
         st.plotly_chart(fig_retard, use_container_width=True)
 else:
     st.success("🎉 Aucune activité en retard selon les filtres OU données de suivi non renseignées")
-
-import altair as alt
-
-# Exemple de données
-mydata = pd.DataFrame({
-    'Activité': ['Achat Serveur', 'Maintenance Réseau', 'Formation équipe', 'Déploiement Cloud'],
-    'Montant': [5000, 2000, 1500, 7000],
-    'Échéance': pd.to_datetime(['2025-05-01', '2025-04-20', '2025-05-15', '2025-04-25'])
-})
-
-# Tri par date d’échéance
-data = mydata.sort_values('Échéance')
-
-mychart = alt.Chart(data).mark_bar().encode(
-    x=alt.X('Échéance:T', title="Date d'échéance"),
-    y=alt.Y('Montant:Q'),
-    color=alt.Color('Activité', legend=None),
-    tooltip=['Activité', 'Montant', 'Échéance']
-).properties(
-    title="Montants par activité et date d’échéance"
-)
-
-st.altair_chart(mychart, use_container_width=True)
