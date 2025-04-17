@@ -7,6 +7,7 @@ cachetools==5.5.2
 Cartopy==0.24.1
 certifi==2025.1.31
 cffi==1.17.1
+chardet==5.2.0
 charset-normalizer==3.4.1
 click==8.1.8
 click-plugins==1.1.1
@@ -17,8 +18,10 @@ cryptography==44.0.2
 cssselect2==0.8.0
 cycler==0.12.1
 dask==2025.3.0
+defusedxml==0.7.1
 et_xmlfile==2.0.0
 fonttools==4.57.0
+fpdf2==2.8.2
 fsspec==2025.3.2
 geopandas==1.0.1
 gitdb==4.0.12
@@ -62,6 +65,7 @@ pytz==2025.2
 PyYAML==6.0.2
 rasterio==1.4.3
 referencing==0.36.2
+reportlab==4.3.1
 requests==2.32.3
 rpds-py==0.24.0
 scipy==1.15.2
