@@ -2,53 +2,57 @@ import streamlit as st
 import tempfile
 import pandas as pd
 import random
+import os
 from io import BytesIO
 from st_aggrid import AgGrid, GridOptionsBuilder
-
 from reportlab.lib.pagesizes import letter, landscape
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
 
-def vizAggrid(activites: pd.DataFrame, title: str):
+
+def vizAggrid(df: pd.DataFrame, title: str):
     st.subheader(f"{title}")
 
     # Affichage interactif
-    gb = GridOptionsBuilder.from_dataframe(activites)
+    gb = GridOptionsBuilder.from_dataframe(df)
     gb.configure_pagination()
     grid_options = gb.build()
-    AgGrid(activites, gridOptions=grid_options, height=300)
+    AgGrid(df, gridOptions=grid_options, height=300)
 
     col1, col2 = st.columns(2)
 
     # --- Bouton PDF ---
     with col1:
         if st.button("📄 Générer le PDF", key=title):
-            if 'activites' in locals() or 'activites' in globals():
-                pdf_path = generate_pdf("Tableau des Activités", activites)
+            pdf_path = generate_pdf(title, df)
             
-                # Télécharger le fichier PDF généré
-                if pdf_path:
-                    with open(pdf_path.name, "rb") as f:
-                        st.download_button(
-                            key=f"btn_{random.randint(1, 1000000)}",
-                            label="⬇️ Télécharger le PDF",
-                            data=f,
-                            file_name=f"activites_{random.randint(1, 100000)}.pdf",
-                            mime="application/pdf"
-                        )
-            else:
-                st.error("Le DataFrame 'activites' n'est pas défini")   
+            if pdf_path:
+                try:
+                    # Lecture du contenu binaire
+                    with open(pdf_path, "rb") as f:
+                        pdf_bytes = f.read()
+                    
+                    # Bouton de téléchargement
+                    st.download_button(
+                        label="⬇️ Télécharger PDF",
+                        data=pdf_bytes,
+                        file_name=f"rapport_{title.replace(' ', '_')}.pdf",
+                        mime="application/pdf"
+                    )
+                finally:
+                    if os.path.exists(pdf_path):
+                        os.remove(pdf_path)
 
     # --- Bouton Excel ---
     with col2:
-        excel_file = convert_df_to_excel(activites)
+        excel_file = convert_df_to_excel(df)
         st.download_button(
             key=f"btn_{random.randint(1, 1000000)}",
             label="📥 Exporter en Excel",
             data=excel_file,
-            file_name=f"activites_{random.randint(1,100000)}.xlsx",
+            file_name=f"df{random.randint(1,100000)}.xlsx",
             mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
         )
 
@@ -64,97 +68,107 @@ def convert_df_to_excel(df):
     return output.getvalue()
 
 # Fonction utilitaire pour generer uf document pdf
-def generate_pdf(title, activites):
+def generate_pdf(title, df):
+    
     try:
-        # Vérifier si le DataFrame est vide
-        if activites.empty:
-            raise ValueError("Le DataFrame des activités est vide")
-            
-        pdf_file = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
-        doc = SimpleDocTemplate(pdf_file.name, pagesize=landscape(letter))
+        if df.empty:
+            raise ValueError("Le DataFrame est vide")
+
+        # Configuration PDF
+        pdf_path = os.path.join(tempfile.gettempdir(), f"rapport_{random.randint(1000,9999)}.pdf")
+        doc = SimpleDocTemplate(
+            pdf_path,
+            pagesize=landscape(letter),
+            leftMargin=20,
+            rightMargin=20,
+            topMargin=50,
+            bottomMargin=30
+        )
+
+        # Styles optimisés
+        styles = getSampleStyleSheet()
+        title_style = ParagraphStyle(
+            'CustomTitle',
+            parent=styles['Title'],
+            fontSize=16,
+            spaceAfter=20,
+            alignment=1
+        )
+
+        # Fonction pour l'en-tête (sans répétition du titre principal)
+        def header(canvas, doc):
+            canvas.saveState()
+            # Pied de page seulement
+            canvas.setFont('Helvetica', 8)
+            canvas.drawCentredString(doc.width/2, 15, f"Page {doc.page}")
+            canvas.restoreState()
+
         elements = []
         
-        # Styles
-        styles = getSampleStyleSheet()
-        p_style = ParagraphStyle(
-            name='Normal',
-            fontName='Helvetica',
-            fontSize=8,
-            leading=10,
-            spaceBefore=2,
-            spaceAfter=2
-        )
-        
-        # Titre
-        title_style = styles['Title']
-        title_style.alignment = 1
+        # Titre principal (uniquement en première page)
         elements.append(Paragraph(title, title_style))
-        elements.append(Paragraph("<br/>", styles['Normal']))
-        
-        # Préparation des données avec vérification de nullité
+        elements.append(Spacer(1, 15))
+
+        # Préparation des données avec gestion du débordement
         data = []
+        col_widths = []
         
         # En-têtes
-        header_row = [Paragraph(str(col), p_style) for col in activites.columns]
+        header_row = []
+        for col in df.columns:
+            header_row.append(Paragraph(f"<b>{col}</b>", styles['Normal']))
+            # Estimation largeur colonne
+            max_len = max(df[col].astype(str).apply(len).max(), len(col))
+            col_widths.append(min(max_len * 4, 150))  # Limite à 150 points
+            
         data.append(header_row)
-        
-        # Données
-        for _, row in activites.iterrows():
+
+        # Données avec gestion des débordements
+        for _, row in df.iterrows():
             data_row = []
-            for item in row:
+            for i, item in enumerate(row):
+                cell_style = styles['Normal']
                 text = str(item) if not pd.isna(item) else ""
-                data_row.append(Paragraph(text, p_style) if len(text) > 50 else text)
-            data.append(data_row)
-        
-        # Vérification que nous avons des données
-        if len(data) == 0 or len(data[0]) == 0:
-            raise ValueError("Aucune donnée à afficher dans le PDF")
-        
-        # Création du tableau avec protection contre les index out of range
-        try:
-            table = Table(data, repeatRows=1)
-            
-            # Style du tableau
-            style = TableStyle([
-                ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#4B6A88')),
-                ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
-                ('ALIGN', (0,0), (-1,-1), 'LEFT'),
-                ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-                ('FONTSIZE', (0,0), (-1,0), 9),
-                ('BOTTOMPADDING', (0,0), (-1,0), 12),
-                ('BACKGROUND', (0,1), (-1,-1), colors.HexColor('#F7F7F7')),
-                ('GRID', (0,0), (-1,-1), 0.5, colors.lightgrey),
-                ('FONTSIZE', (0,1), (-1,-1), 8),
-                ('VALIGN', (0,0), (-1,-1), 'TOP'),
-                ('LEFTPADDING', (0,0), (-1,-1), 3),
-                ('RIGHTPADDING', (0,0), (-1,-1), 3),
-            ])
-            table.setStyle(style)
-            
-            # Calcul des largeurs de colonnes sécurisé
-            if len(data) > 0 and len(data[0]) > 0:
-                col_widths = []
-                for i in range(len(data[0])):
-                    try:
-                        max_len = max(
-                            len(str(row[i])) if i < len(row) else 0 
-                            for row in data[:20]  # Seulement les 20 premières lignes
-                        )
-                        col_widths.append(min(max(max_len * 2.5, 80), 300))  # Entre 80 et 300
-                    except:
-                        col_widths.append(100)  # Valeur par défaut si erreur
                 
-                table._argW = col_widths
-            
-            elements.append(table)
-            
-        except Exception as table_error:
-            raise ValueError(f"Erreur lors de la création du tableau: {str(table_error)}")
+                # Adaptation du contenu selon la largeur
+                if len(text) * 4 > col_widths[i]:  # Si risque de débordement
+                    wrapped_text = "<br/>".join([text[j:j+30] for j in range(0, len(text), 30)])
+                    data_row.append(Paragraph(wrapped_text, cell_style))
+                else:
+                    data_row.append(text)
+            data.append(data_row)
+
+        # Création du tableau
+        table = Table(data, colWidths=col_widths, repeatRows=1)
         
-        # Génération du PDF
-        doc.build(elements)
-        return pdf_file.name
-    
+        # Style amélioré
+        table.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#4B6A88')),
+            ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
+            ('ALIGN', (0,0), (-1,-1), 'LEFT'),
+            ('VALIGN', (0,0), (-1,-1), 'TOP'),
+            ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0,0), (-1,0), 9),
+            ('FONTSIZE', (0,1), (-1,-1), 8),
+            ('BOTTOMPADDING', (0,0), (-1,0), 8),
+            ('BACKGROUND', (0,1), (-1,-1), colors.HexColor('#F7F7F7')),
+            ('GRID', (0,0), (-1,-1), 0.5, colors.lightgrey),
+            ('LEFTPADDING', (0,0), (-1,-1), 4),
+            ('RIGHTPADDING', (0,0), (-1,-1), 4),
+            ('WORDWRAP', (0,0), (-1,-1), 'CJK'),  # Gestion explicite du débordement
+        ]))
+
+        elements.append(table)
+        
+        # Construction du PDF
+        doc.build(
+            elements,
+            onFirstPage=header,
+            onLaterPages=header
+        )
+        
+        return pdf_path
+
     except Exception as e:
-        st.error(f"Erreur lors de la génération du PDF: {str(e)}")
+        st.error(f"Erreur génération PDF : {str(e)}")
         return None
